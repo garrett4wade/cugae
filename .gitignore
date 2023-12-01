@@ -5,3 +5,4 @@ build
 dist
 **pycache**
 .pytest_cache
+.hypothesis
