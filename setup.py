@@ -1,20 +1,13 @@
+import os
+import platform
+import subprocess
 import sys
 import warnings
-import os
+
 from packaging.version import parse
-import platform
-
 from setuptools import setup
-import subprocess
-
-
+from torch.utils.cpp_extension import BuildExtension, CUDA_HOME, CUDAExtension
 import torch
-from torch.utils.cpp_extension import (
-    BuildExtension,
-    CUDAExtension,
-    CUDA_HOME,
-)
-
 
 # ninja build does not work unless include_dirs are abs path
 this_dir = os.path.dirname(os.path.abspath(__file__))

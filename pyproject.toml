@@ -1,0 +1,6 @@
+[tool.isort]
+from_first = true
+force_alphabetical_sort_within_sections = true
+lexicographical = true
+src_paths = ["."]
+line_length = 110

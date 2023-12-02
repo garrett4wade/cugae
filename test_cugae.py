@@ -1,10 +1,11 @@
 from typing import Tuple
 import time
-import cugae
-import torch
+
 import pytest
+import torch
 
 from pygae import *
+import cugae
 
 
 @pytest.mark.parametrize("max_seqlen", [32, 128, 512])
