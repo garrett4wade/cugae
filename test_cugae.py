@@ -4,7 +4,7 @@ import cugae
 import torch
 import pytest
 
-from .pygae import *
+from pygae import *
 
 
 @pytest.mark.parametrize("max_seqlen", [32, 128, 512])
@@ -42,7 +42,7 @@ def test_gae2d_olp(bs: int, seqlen: int, gamma: float, lam: float):
     values = torch.randn(bs, seqlen + 1).cuda()
     dones = torch.randint(0, 2, (bs, seqlen + 1)).bool().cuda()
     truncates = dones.logical_and(torch.randint(0, 2, (bs, seqlen + 1)).bool().cuda())
-    
+
     py_adv, py_ret = pygae2d_olp(rewards, values, dones, truncates, gamma, lam)
     adv, ret = cugae.cugae2d_olp_func(rewards, values, dones, truncates, gamma, lam)
 
@@ -51,7 +51,37 @@ def test_gae2d_olp(bs: int, seqlen: int, gamma: float, lam: float):
     t2 = time.perf_counter_ns()
     adv, ret = cugae.cugae2d_olp_func(rewards, values, dones, truncates, gamma, lam)
     t3 = time.perf_counter_ns()
-    
+
+    assert torch.allclose(adv, py_adv, atol=1e-5), (adv - py_adv).abs().max()
+    assert torch.allclose(ret, py_ret, atol=1e-5), (ret - py_ret).abs().max()
+    print(f"seqlen={seqlen},bs={bs}, CUDA acceleration ratio", (t2 - t1) / (t3 - t2))
+
+
+@pytest.mark.parametrize("seqlen", [32, 128, 512, 1024])
+@pytest.mark.parametrize("bs", [8, 16, 32, 100])
+@pytest.mark.parametrize("gamma", [0.9, 1.0])
+@pytest.mark.parametrize("lam", [0.5, 1.0])
+def test_gae2d_nolp(bs: int, seqlen: int, gamma: float, lam: float):
+    torch.random.manual_seed(0)
+    rewards = torch.randn(bs, seqlen).cuda()
+    values = torch.randn(bs, seqlen + 1).cuda()
+    on_reset_ = torch.randint(0, 2, (bs, seqlen + 2)).bool().cuda()
+    on_reset = on_reset_[:, :-1].contiguous()
+    truncates = on_reset_[:, 1:].logical_and(torch.randint(0, 2, (bs, seqlen + 1)).bool().cuda()).contiguous()
+
+    py_adv, py_ret = pygae2d_nolp(rewards, values, on_reset, truncates, gamma, lam)
+    adv, ret = cugae.cugae2d_nolp_func(rewards, values, on_reset, truncates, gamma, lam)
+
+    t1 = time.perf_counter_ns()
+    py_adv, py_ret = pygae2d_nolp(rewards, values, on_reset, truncates, gamma, lam)
+    t2 = time.perf_counter_ns()
+    adv, ret = cugae.cugae2d_nolp_func(rewards, values, on_reset, truncates, gamma, lam)
+    t3 = time.perf_counter_ns()
+
+    adv = adv * (1 - truncates[:, :-1].float())
+    py_adv = py_adv * (1 - truncates[:, :-1].float())
+    ret = ret * (1 - truncates[:, :-1].float())
+    py_ret = py_ret * (1 - truncates[:, :-1].float())
     assert torch.allclose(adv, py_adv, atol=1e-5), (adv - py_adv).abs().max()
     assert torch.allclose(ret, py_ret, atol=1e-5), (ret - py_ret).abs().max()
     print(f"seqlen={seqlen},bs={bs}, CUDA acceleration ratio", (t2 - t1) / (t3 - t2))

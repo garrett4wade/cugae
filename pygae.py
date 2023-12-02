@@ -20,7 +20,7 @@ def pygae2d_olp(
     step = episode_length - 1
     while step >= 0:
         # if env is terminated compulsively, then abandon the finnal step
-        # i.e. advantage of final step is 0, value target of final step is predicted value
+        # i.e. advantage of final step is 0, values target of final step is predicted values
         gae = (delta[:, step] + m[:, step] * gae) * truncate_mask[:, step + 1]
         adv[:, step] = gae
         step -= 1
@@ -59,3 +59,34 @@ def pygae1d_nolp_misalign(
     advantages = torch.stack(advantages_reversed[::-1])
     returns = torch.stack(returns_reversed[::-1])
     return advantages, returns
+
+
+def pygae2d_nolp(
+    rewards: torch.FloatTensor,
+    values: torch.FloatTensor,
+    on_reset: torch.BoolTensor,
+    truncates: torch.BoolTensor,
+    gamma: float,
+    lam: float,
+) -> torch.FloatTensor:
+    on_reset = on_reset.float()
+    truncates = truncates.float()
+    episode_length = int(rewards.shape[1])
+    delta = rewards + gamma * values[:, 1:] * (1 - on_reset[:, 1:]) - values[:, :-1]
+
+    gae = torch.zeros_like(rewards[:, 0])
+    adv = torch.zeros_like(rewards)
+
+    # 1. If the next step is a new episode, GAE doesn't propagate back
+    # 2. If the next step is a truncated final step, the backpropagated GAE is -V(t),
+    #    which is not correct. We ignore it such that the current GAE is r(t-1)+ɣV(t)-V(t-1)
+    # 3. If the next step is a done final step, the backpropagated GAE is zero.
+    m = gamma * lam * (1 - on_reset[:, 1:]) * (1 - truncates[:, 1:])
+
+    step = episode_length - 1
+    while step >= 0:
+        gae = delta[:, step] + m[:, step] * gae
+        adv[:, step] = gae
+        step -= 1
+
+    return adv, adv + values[:, :-1]

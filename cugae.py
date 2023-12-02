@@ -39,3 +39,30 @@ def cugae2d_olp_func(
         gamma,
         lam,
     )
+
+
+def cugae2d_nolp_func(
+    rewards: torch.FloatTensor,
+    values: torch.FloatTensor,
+    on_reset: torch.BoolTensor,
+    trunates: torch.BoolTensor,
+    gamma: float,
+    lam: float,
+) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
+    on_reset_indices = on_reset.nonzero()
+    num_resets = on_reset.float().sum(1)
+    max_num_resets = int(num_resets.max())
+    cu_num_resets = torch.nn.functional.pad(num_resets.cumsum(0), (1, 0), value=0).int()
+    trunates = torch.cat([torch.zeros_like(trunates[:, 0:1]), trunates[:, :-1]], dim=1)
+    bootstrap = trunates[on_reset_indices[:, 0], on_reset_indices[:, 1]]
+    return gae_cuda.gae_2d_nolp(
+        rewards,
+        values,
+        on_reset,
+        on_reset_indices[:, 1].int(),
+        cu_num_resets,
+        max_num_resets,
+        bootstrap,
+        gamma,
+        lam,
+    )
