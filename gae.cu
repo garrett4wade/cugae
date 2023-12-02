@@ -7,9 +7,10 @@
               #x " must have shape (" #__VA_ARGS__ ")")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 
-__global__ void gae_kernel_1d(const float *rewards, const float *values, const int *cu_seqlens,
-                              const bool *bootstrap, float *adv_out, float *ret_out, int batch_size,
-                              float gamma, float lmbda) {
+__global__ void gae_kernel_1d_nolp_misalign(const float *rewards, const float *values,
+                                            const int *cu_seqlens, const bool *bootstrap,
+                                            float *adv_out, float *ret_out, int batch_size,
+                                            float gamma, float lmbda) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= batch_size) { return; }
   // get the idx-th start index from cu_seqlens
@@ -27,8 +28,9 @@ __global__ void gae_kernel_1d(const float *rewards, const float *values, const i
 }
 
 template<int num_threads>
-std::vector<at::Tensor> gae_1d(at::Tensor &rewards, at::Tensor &values, at::Tensor &cu_seqlens,
-                               at::Tensor &bootstrap, float gamma, float lmbda) {
+std::vector<at::Tensor> gae_1d_nolp_misalign(at::Tensor &rewards, at::Tensor &values,
+                                             at::Tensor &cu_seqlens, at::Tensor &bootstrap,
+                                             float gamma, float lmbda) {
   int batch_size = cu_seqlens.numel() - 1;
   int total_seqlen = rewards.size(0);
   CHECK_DEVICE(rewards);
@@ -50,18 +52,19 @@ std::vector<at::Tensor> gae_1d(at::Tensor &rewards, at::Tensor &values, at::Tens
   int num_blocks = (batch_size + num_threads - 1) / num_threads;
   auto adv_out = at::zeros_like(rewards);
   auto ret_out = at::zeros_like(rewards);
-  gae_kernel_1d<<<num_blocks, num_threads>>>(rewards.data_ptr<float>(), values.data_ptr<float>(),
-                                             cu_seqlens.data_ptr<int>(), bootstrap.data_ptr<bool>(),
-                                             adv_out.data_ptr<float>(), ret_out.data_ptr<float>(),
-                                             batch_size, gamma, lmbda);
+  gae_kernel_1d_nolp_misalign<<<num_blocks, num_threads>>>(
+      rewards.data_ptr<float>(), values.data_ptr<float>(), cu_seqlens.data_ptr<int>(),
+      bootstrap.data_ptr<bool>(), adv_out.data_ptr<float>(), ret_out.data_ptr<float>(), batch_size,
+      gamma, lmbda);
   return {adv_out, ret_out};
 }
 
-__global__ void gae_kernel_2d(const float *rewards, int r_stride, const float *values, int v_stride,
-                              const bool *done, int d_stride, const int *done_y_indices,
-                              const int *cu_num_dones, const bool *is_truncate, float *adv_out,
-                              int adv_stride, float *ret_out, int ret_stride, int batch_size,
-                              int horizon, float gamma, float lmbda) {
+__global__ void gae_kernel_2d_olp(const float *rewards, int r_stride, const float *values,
+                                   int v_stride, const bool *done, int d_stride,
+                                   const int *done_y_indices, const int *cu_num_dones,
+                                   const bool *is_truncate, float *adv_out, int adv_stride,
+                                   float *ret_out, int ret_stride, int batch_size, int horizon,
+                                   float gamma, float lmbda) {
   int batch_idx = blockIdx.x * blockDim.x + threadIdx.x;
   int seq_idx = blockIdx.y * blockDim.y + threadIdx.y;
   int t_breadth = cu_num_dones[batch_idx + 1] - cu_num_dones[batch_idx] + 1;
@@ -86,10 +89,10 @@ __global__ void gae_kernel_2d(const float *rewards, int r_stride, const float *v
 }
 
 template<int num_threads_x, int num_threads_y>
-std::vector<at::Tensor> gae_2d(at::Tensor &rewards, at::Tensor &values, at::Tensor &done,
-                               at::Tensor &done_y_indices, at::Tensor &cu_num_dones,
-                               int max_num_dones, at::Tensor &is_truncate, float gamma,
-                               float lmbda) {
+std::vector<at::Tensor> gae_2d_olp(at::Tensor &rewards, at::Tensor &values, at::Tensor &done,
+                                    at::Tensor &done_y_indices, at::Tensor &cu_num_dones,
+                                    int max_num_dones, at::Tensor &is_truncate, float gamma,
+                                    float lmbda) {
   int batch_size = rewards.size(0);
   int horizon = rewards.size(1);
   int num_dones = done_y_indices.numel();
@@ -121,7 +124,7 @@ std::vector<at::Tensor> gae_2d(at::Tensor &rewards, at::Tensor &values, at::Tens
   dim3 threadsPerBlock(num_threads_x, num_threads_y);
   dim3 numBlocks((batch_size + num_threads_x - 1) / num_threads_x,
                  (max_num_dones + 1 + num_threads_y - 1) / num_threads_y);
-  gae_kernel_2d<<<numBlocks, threadsPerBlock>>>(
+  gae_kernel_2d_olp<<<numBlocks, threadsPerBlock>>>(
       rewards.data_ptr<float>(), rewards.stride(0), values.data_ptr<float>(), values.stride(0),
       done.data_ptr<bool>(), done.stride(0), done_y_indices.data_ptr<int>(),
       cu_num_dones.data_ptr<int>(), is_truncate.data_ptr<bool>(), adv_out.data_ptr<float>(),
@@ -132,6 +135,9 @@ std::vector<at::Tensor> gae_2d(at::Tensor &rewards, at::Tensor &values, at::Tens
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.doc() = "Generalized Advantage Estimation (CUDA)";
-  m.def("gae_1d", &gae_1d<256>, "1D Generalized Advantage Estimation (CUDA)");
-  m.def("gae_2d", &gae_2d<16, 16>, "2D Generalized Advantage Estimation (CUDA)");
+  m.def("gae_1d_nolp_misalign", &gae_1d_nolp_misalign<256>,
+        "1D Generalized Advantage Estimation (CUDA) with no termination overlap and misaligned "
+        "rewards/values");
+  m.def("gae_2d_olp", &gae_2d_olp<16, 16>,
+        "2D Generalized Advantage Estimation (CUDA) with overlapped termination");
 }

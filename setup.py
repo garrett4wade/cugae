@@ -19,7 +19,7 @@ from torch.utils.cpp_extension import (
 # ninja build does not work unless include_dirs are abs path
 this_dir = os.path.dirname(os.path.abspath(__file__))
 
-PACKAGE_NAME = "cu_gae"
+PACKAGE_NAME = "cugae"
 
 
 def get_platform():
