@@ -25,6 +25,6 @@ See [`cugae.py`](https://github.com/garrett4wade/cugae/blob/main/cugae.py) for d
 
 ## Benchmark Results
 
-This benchmark is performed using Python 3.10.12, CUDA 12.2 in WSL2 Unbuntu 22.04 on a laptop with Intel i7 i7-12700H CPU and Nvidia 3070 GPU.
+This benchmark is performed using Python 3.10.12, CUDA 12.2 in WSL2 Unbuntu 22.04 on a laptop with Intel i7-12700H CPU and Nvidia 3070 GPU.
 
 ![Benchmark Results](https://github.com/garrett4wade/cugae/blob/main/benchmark.png)
