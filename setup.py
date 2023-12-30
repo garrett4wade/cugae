@@ -5,7 +5,7 @@ import sys
 import warnings
 
 from packaging.version import parse
-from setuptools import setup
+from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDA_HOME, CUDAExtension
 import torch
 
@@ -69,7 +69,7 @@ ext_modules.append(
     CUDAExtension(
         name="gae_cuda",
         sources=[
-            "gae.cu",
+            "csrc/gae.cu",
         ],
         extra_compile_args={
             "cxx": ["-O3", "-std=c++17"],
@@ -98,6 +98,7 @@ setup(
     name=PACKAGE_NAME,
     version="0.1.0",
     author="Wei Fu",
+    packages=find_packages(),
     author_email="fuwth17@gmail.com",
     description="Fast generalized advantage estimation for PyTorch",
     ext_modules=ext_modules,
