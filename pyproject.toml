@@ -4,3 +4,6 @@ force_alphabetical_sort_within_sections = true
 lexicographical = true
 src_paths = ["."]
 line_length = 110
+
+[build-system]
+requires = ["packaging", "ninja", "torch"]
